@@ -2,8 +2,15 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/seonghann/tsdiff/tree/master/LICENSE)
 
-The official implementation of TSDiff: Diffusion-based Generative AI for Exploring Transition States from 2D Molecular Graphs [[arxiv]](https://arxiv.org/abs/2304.12233).
+The **forked** official implementation of TSDiff: Diffusion-based Generative AI for Exploring Transition States from 2D Molecular Graphs [[arxiv]](https://arxiv.org/abs/2304.12233).
 ![cover](assets/Figure1.png)
+
+## Changelog
+
+### 2023.11.25
+
+- Upgraded to **PyTorch 2.1.1, Python 3.10**
+- Different from the original repository, the `feat_dim` in `train_config.yml` has changed from `25` to `28` due to the `rdkit` package upgrade.
 
 ## Environments
 
@@ -11,11 +18,9 @@ The official implementation of TSDiff: Diffusion-based Generative AI for Explori
 
 ```bash
 # Clone the environment
-conda env create -f env.yml
+conda env create -f environment.yml
 # Activate the environment
-conda activate cu102_tsdiff
-# Install PyG
-conda install pytorch-geometric=1.7.2=py37_torch_1.8.0_cu102 -c rusty1s -c conda-forge
+conda activate tsdiff
 ```
 
 ## Dataset
@@ -29,7 +34,7 @@ To reproduce paper you can follow the code.
 ```bash
 PARENT_DIR=$(dirname $(pwd))
 export PYTHONPATH="$PARENT_DIR:${PYTHONPATH}"
-python3 preprocessing.py
+python preprocessing.py
 ls data/TS/wb97xd3/random_split_42
 ```
 
