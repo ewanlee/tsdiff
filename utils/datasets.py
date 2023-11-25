@@ -1108,14 +1108,16 @@ class ConformationDataset(Dataset):
         self.atom_types = self._atom_types()
         self.edge_types = self._edge_types()
 
-    def __getitem__(self, idx):
+    # def __getitem__(self, idx):
+    def get(self, idx):
 
         data = self.data[idx].clone()
         if self.transform is not None:
             data = self.transform(data)
         return data
 
-    def __len__(self):
+    # def __len__(self):
+    def len(self):
         return len(self.data)
 
     def _atom_types(self):
