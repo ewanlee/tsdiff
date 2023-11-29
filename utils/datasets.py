@@ -445,7 +445,12 @@ def generate_ts_data2(
         atomic_feat = []
         for k, v in feat_dict.items():
             feat = getattr(atom, k)()
+            if k == 'GetHybridization' and (str(feat) in ['SP3D', 'SP3D2']):
+                feat = rdkit.Chem.rdchem.HybridizationType.SP3
+            elif k == 'GetTotalValence' and (feat == 0):
+                feat = 1
             if feat not in v:
+                print(k, feat, type(feat))
                 v.update({feat: len(v)})
             atomic_feat.append(v[feat])
         r_feat.append(atomic_feat)
@@ -455,6 +460,10 @@ def generate_ts_data2(
         atomic_feat = []
         for k, v in feat_dict.items():
             feat = getattr(atom, k)()
+            if k == 'GetHybridization' and (str(feat) in ['SP3D', 'SP3D2']):
+                feat = rdkit.Chem.rdchem.HybridizationType.SP3
+            elif k == 'GetTotalValence' and (feat == 0):
+                feat = 1
             if feat not in v:
                 v.update({feat: len(v)})
             atomic_feat.append(v[feat])

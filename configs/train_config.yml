@@ -17,7 +17,8 @@ model:
     hidden_dim: 256
 
   # atom/edge embedding
-  feat_dim: 28 # rdkit version change from 2020 to 2023
+  # feat_dim: 28 # rdkit version change from 2020 to 2023
+  feat_dim: 25
   hidden_dim: 256
   edge_encoder: mlp
 

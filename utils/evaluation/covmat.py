@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from copy import deepcopy
 import pandas as pd
 import multiprocessing as mp
 from torch_geometric.data import Data
@@ -8,32 +9,61 @@ from easydict import EasyDict
 from tqdm.auto import tqdm
 from rdkit import Chem
 from rdkit.Chem.rdForceFieldHelpers import MMFFOptimizeMolecule
+from rdkit.Chem import rdDetermineBonds
+from rdkit.Chem import rdDistGeom
 
 from ..chem import set_rdmol_positions, get_best_rmsd
 
+def pos2xyz(ind, r, pos):
+    atom_type = [a.GetSymbol() for a in r.GetAtoms()]
+    N = len(atom_type)
+    description = f'generated ts {ind:0>6d}'
+    pos_lines = []
+    for t, p in zip(atom_type, pos):
+        pos_lines.append('\t'.join([t]+list(map(str, p.tolist()))))
+    return '\n'.join([str(N), description, *pos_lines])
+
 
 def get_rmsd_confusion_matrix(data: Data, useFF=False):
-    data["pos_ref"] = data["pos_ref"].reshape(-1, data["rdmol"].GetNumAtoms(), 3)
-    data["pos_gen"] = data["pos_gen"].reshape(-1, data["rdmol"].GetNumAtoms(), 3)
+    # data["pos_ref"] = data["pos_ref"].reshape(-1, data["rdmol"].GetNumAtoms(), 3)
+    # data["pos_gen"] = data["pos_gen"].reshape(-1, data["rdmol"].GetNumAtoms(), 3)
+    data["pos_ref"] = data["pos_ref"].reshape(-1, len(data['atom_type']), 3)
+    data["pos_gen"] = data["pos_gen"].reshape(-1, len(data['atom_type']), 3)
     num_gen = data["pos_gen"].shape[0]
     num_ref = data["pos_ref"].shape[0]
 
     # assert num_gen == data.num_pos_gen.item()
     # assert num_ref == data.num_pos_ref.item()
 
-    rmsd_confusion_mat = -1 * np.ones([num_ref, num_gen], dtype=np.float)
+    rmsd_confusion_mat = -1 * np.ones([num_ref, num_gen], dtype=float)
 
     for i in range(num_gen):
-        gen_mol = set_rdmol_positions(data["rdmol"], data["pos_gen"][i])
+        # gen_mol = set_rdmol_positions(data["rdmol"], data["pos_gen"][i])
+        gen_xyz = pos2xyz(i, data['rdmol'][0], data['pos_gen'][i])
+        try:
+            gen_mol = Chem.Mol(Chem.MolFromXYZBlock(gen_xyz))
+            rdDetermineBonds.DetermineConnectivity(gen_mol)
+        except Exception as e:
+            print(e)
+            return None, data
         if useFF:
             # print('Applying FF on generated molecules...')
             MMFFOptimizeMolecule(gen_mol)
         for j in range(num_ref):
-            ref_mol = set_rdmol_positions(data["rdmol"], data["pos_ref"][j])
+            # ref_mol = set_rdmol_positions(data["rdmol"], data["pos_ref"][j])
+            ref_xyz = pos2xyz(i, data['rdmol'][0], data['pos_ref'][i])
+            try:
+                ref_mol = Chem.Mol(Chem.MolFromXYZBlock(ref_xyz))
+                rdDetermineBonds.DetermineConnectivity(ref_mol)
+            except Exception as e:
+                return None, data
 
-            rmsd_confusion_mat[j, i] = get_best_rmsd(gen_mol, ref_mol)
+            try:
+                rmsd_confusion_mat[j, i] = get_best_rmsd(gen_mol, ref_mol)
+            except Exception as e:
+                return None, data
 
-    return rmsd_confusion_mat
+    return rmsd_confusion_mat, data
 
 
 def evaluate_conf(data: Data, useFF=False, threshold=0.5):
@@ -103,19 +133,28 @@ class CovMatEvaluator(object):
         filtered_data_list = []
         for data in packed_data_list:
             if "pos_gen" not in data or "pos_ref" not in data:
+                print('position missing')
                 continue
             if self.filter_disconnected and ("." in data["smiles"]):
+                print('smiles abnormal')
                 continue
 
+            # data["pos_ref"] = data["pos_ref"].reshape(
+            #     -1, data["rdmol"].GetNumAtoms(), 3
+            # )
+            # data["pos_gen"] = data["pos_gen"].reshape(
+            #     -1, data["rdmol"].GetNumAtoms(), 3
+            # )
             data["pos_ref"] = data["pos_ref"].reshape(
-                -1, data["rdmol"].GetNumAtoms(), 3
+                -1, len(data['atom_type']), 3
             )
             data["pos_gen"] = data["pos_gen"].reshape(
-                -1, data["rdmol"].GetNumAtoms(), 3
+                -1, len(data['atom_type']), 3
             )
 
             num_gen = data["pos_ref"].shape[0] * self.ratio
             if data["pos_gen"].shape[0] < num_gen:
+                print('length mismatch')
                 continue
             data["pos_gen"] = data["pos_gen"][:num_gen]
 
@@ -130,10 +169,16 @@ class CovMatEvaluator(object):
         matr_scores = []
         covp_scores = []
         matp_scores = []
-        for confusion_mat in tqdm(
+        abnormals = []
+        for confusion_mat, data in tqdm(
             self.pool.imap(func, filtered_data_list), total=len(filtered_data_list)
         ):
+        # for data in filtered_data_list:
+        #     confusion_mat, data = func(data)
             # confusion_mat: (num_ref, num_gen)
+            if confusion_mat is None:
+                abnormals.append(data)
+                continue
             rmsd_ref_min = confusion_mat.min(-1)  # np (num_ref, )
             rmsd_gen_min = confusion_mat.min(0)  # np (num_gen, )
             rmsd_cov_thres = rmsd_ref_min.reshape(-1, 1) <= self.thresholds.reshape(
@@ -151,7 +196,6 @@ class CovMatEvaluator(object):
             covp_scores.append(
                 rmsd_jnk_thres.mean(0, keepdims=True)
             )  # np (1, num_thres)
-
         covr_scores = np.vstack(covr_scores)  # np (num_mols, num_thres)
         matr_scores = np.array(matr_scores)  # np (num_mols, )
         covp_scores = np.vstack(covp_scores)  # np (num_mols, num_thres)
@@ -164,6 +208,8 @@ class CovMatEvaluator(object):
                 "thresholds": self.thresholds,
                 "CoverageP": covp_scores,
                 "MatchingP": matp_scores,
+                "#Abnormals": len(abnormals),
+                "Abnormals": abnormals
             }
         )
         # print_conformation_eval_results(results)

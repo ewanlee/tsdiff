@@ -121,6 +121,7 @@ if __name__ == "__main__":
 
     # Load checkpoint
     logger.info("Loading model...")
+    args.ckpt = args.ckpt[0].split(" ")
     ckpts = [torch.load(x) for x in args.ckpt]
     models = []
     for ckpt, ckpt_path in zip(ckpts, args.ckpt):
@@ -146,7 +147,7 @@ if __name__ == "__main__":
             test_set = preprocessing(smarts_list, feat_dict_path=args.feat_dict)
         else:
             logger.info(f"Test file from {args.test_set}.\n Loading dataset...")
-            test_set = pickle.load(open(args.test_set, "w"))
+            test_set = pickle.load(open(args.test_set, "rb"))
     else:
         logger.info(f"Test smarts : {args.test_set}.\n Processing smarts...")
         smarts_list = [args.test_set]

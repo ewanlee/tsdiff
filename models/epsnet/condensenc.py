@@ -291,17 +291,18 @@ class CondenseEncoderEpsNetwork(nn.Module):
         time_step = torch.cat([half_1, half_2], dim=0)[:num_graphs]
         a = self.alphas.index_select(0, time_step)  # (G, )
 
-        # Perterb pos
+        # Perterb pos, get C_t
         a_pos = a.index_select(0, node2graph).unsqueeze(-1)  # (N, 1)
         pos_noise = torch.randn(size=pos.size(), device=dev)
         pos_perturbed = pos + pos_noise * (1.0 - a_pos).sqrt() / a_pos.sqrt()
 
-        # prediction
+        # prediction, \epsilon_\theta = \mu_\theta(C_t, t, G_{rxn})
         edge_inv, edge_index, edge_length = self(
             atom_type, r_feat, p_feat, pos_perturbed, bond_index, bond_type,
             batch, time_step, return_edges=True, extend_order=extend_order,
             extend_radius=extend_radius,
         )  # (E, 1)
+        # get \epsilon_\theta
         node_eq = eq_transform(
             edge_inv, pos_perturbed, edge_index, edge_length
         )  # chain rule (re-parametrization, distance to position)
@@ -314,7 +315,7 @@ class CondenseEncoderEpsNetwork(nn.Module):
         d_gt = get_distance(pos, edge_index).unsqueeze(-1)  # (E, 1)
         d_perturbed = edge_length
 
-        # compute target
+        # compute target, \epsilon = (C_0 - C_t) * \sqrt(\alpha_t) / \sqrt(1 - \alpha_t)
         d_target = d_gt - d_perturbed  # (E, 1), denoising direction
         d_target = d_target / (1.0 - a_edge).sqrt() * a_edge.sqrt()
         pos_target = eq_transform(
